@@ -1,0 +1,23 @@
+[project]
+name = "mirror.py-rsync-server"
+version = "0.1.0"
+description = "mirror.py event plug-in that generates rsyncd.conf and rsyncd.secrets from the package list."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+    { name = "SPARCS KAIST" },
+]
+dependencies = [
+    "mirror.py>=1.0.0",
+]
+
+[project.entry-points."mirror.event"]
+rsync-server = "mirror_plugin_rsync_server:plugin"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["mirror_plugin_rsync_server*"]

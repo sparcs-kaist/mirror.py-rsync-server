@@ -1,0 +1,25 @@
+{
+    "rsyncd_conf": "/etc/rsyncd.conf",
+    "secrets_file": "/mirror/etc/rsyncd.secrets",
+    "users": {
+        "kaist-mirror": "examplepassword"
+    },
+    "global": {
+        "uid": "rsync",
+        "gid": "nogroup",
+        "use chroot": "no",
+        "max connections": 20,
+        "motd file": "/mirror/etc/motd",
+        "log file": "/var/log/geoul/rsyncd/all.log",
+        "transfer logging": "yes",
+        "log format": "%o %a - %u [%t] \"%P/%f\" - %l",
+        "pid file": "/var/run/rsyncd.pid",
+        "exclude": ".~tmp~"
+    },
+    "private_modules": {
+        "enabled": true,
+        "auth_users": "*",
+        "list": false,
+        "lock_file": "/var/run/rsyncd-private.lock"
+    }
+}

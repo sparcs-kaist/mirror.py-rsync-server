@@ -468,10 +468,10 @@ def test_build_global_section_empty_params() -> None:
 # --- build_public_module tests ---
 
 def test_build_public_module_omits_comment_when_src_empty() -> None:
-    pkg = make_pkg("p1", "Debian", "/mirror/ftp/Debian", src="")
+    pkg = make_pkg("debian", "Debian", "/mirror/ftp/Debian", src="")
     result = build_public_module(pkg)
     assert "comment" not in result
-    assert result == "[Debian]\n    path = /mirror/ftp/Debian"
+    assert result == "[debian]\n    path = /mirror/ftp/Debian"
 
 
 def test_build_public_module_includes_comment_when_src_set() -> None:
@@ -484,7 +484,7 @@ def test_build_public_module_includes_comment_when_src_set() -> None:
 # --- build_private_module tests ---
 
 def test_build_private_module_structure() -> None:
-    pkg = make_pkg("p1", "ArchLinux", "/mirror/ftp/ArchLinux")
+    pkg = make_pkg("archlinux", "ArchLinux", "/mirror/ftp/ArchLinux")
     pm = {
         "enabled": True,
         "auth_users": "*",
@@ -493,7 +493,7 @@ def test_build_private_module_structure() -> None:
     }
     result = build_private_module(pkg, pm)
     lines = result.splitlines()
-    assert lines[0] == "[.ArchLinux]"
+    assert lines[0] == "[.archlinux]"
     assert lines[1] == "    path = /mirror/ftp/ArchLinux"
     assert "private module for ArchLinux without connection limits" in lines[2]
     assert lines[3] == "    auth users = *"
@@ -548,7 +548,7 @@ def test_select_visible_packages_skips_control_char_dst(
 def test_select_visible_packages_skips_invalid_module_name(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    invalid_names = [
+    invalid_pkgids = [
         "has/slash",
         "has]bracket",
         "has space",
@@ -556,14 +556,14 @@ def test_select_visible_packages_skips_invalid_module_name(
         "global",
         "GLOBAL",
     ]
-    for name in invalid_names:
-        pkgs = [make_pkg("p1", name, dst="/mirror/ftp/pkg")]
+    for pkgid in invalid_pkgids:
+        pkgs = [make_pkg(pkgid, "Display Name", dst="/mirror/ftp/pkg")]
         caplog.clear()
         with caplog.at_level(logging.WARNING, logger="mirror"):
             result = select_visible_packages(pkgs)
-        assert result == [], f"Expected {name!r} to be skipped"
-        assert any("p1" in r.message for r in caplog.records), (
-            f"Expected warning for {name!r}"
+        assert result == [], f"Expected {pkgid!r} to be skipped"
+        assert any(pkgid in r.message for r in caplog.records), (
+            f"Expected warning for {pkgid!r}"
         )
 
 
@@ -571,15 +571,15 @@ def test_select_visible_packages_dedup_case_insensitive(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     # "Foo" sorts before "foo", so "Foo" is kept and "foo" is skipped.
-    pkg_upper = make_pkg("p1", "Foo", dst="/mirror/ftp/Foo")
-    pkg_lower = make_pkg("p2", "foo", dst="/mirror/ftp/foo")
+    pkg_upper = make_pkg("Foo", "FooName", dst="/mirror/ftp/Foo")
+    pkg_lower = make_pkg("foo", "fooName", dst="/mirror/ftp/foo")
     with caplog.at_level(logging.WARNING, logger="mirror"):
         result = select_visible_packages([pkg_upper, pkg_lower])
     assert len(result) == 1
-    assert result[0].pkgid == "p1"
+    assert result[0].pkgid == "Foo"
     warning_messages = " ".join(r.message for r in caplog.records)
-    assert "p1" in warning_messages
-    assert "p2" in warning_messages
+    assert "Foo" in warning_messages
+    assert "foo" in warning_messages
 
 
 def test_hidden_package_excluded_entirely(
@@ -609,11 +609,11 @@ exclude = .~tmp~
 
 secrets file = /mirror/etc/rsyncd.secrets
 
-[ArchLinux]
+[archlinux]
     path = /mirror/ftp/ArchLinux
     comment = from rsync://rsync.archlinux.org/ftp_tier1
 
-[.ArchLinux]
+[.archlinux]
     path = /mirror/ftp/ArchLinux
     comment = private module for ArchLinux without connection limits for authorized mirrors
     auth users = *
@@ -654,12 +654,12 @@ def test_build_rsyncd_conf_two_packages_sorted() -> None:
     result = build_rsyncd_conf([pkg_z, pkg_a], config)
     lines = result.splitlines()
     # APackage must appear before ZPackage
-    idx_a_pub = next(i for i, l in enumerate(lines) if l == "[APackage]")
-    idx_z_pub = next(i for i, l in enumerate(lines) if l == "[ZPackage]")
+    idx_a_pub = next(i for i, l in enumerate(lines) if l == "[pa]")
+    idx_z_pub = next(i for i, l in enumerate(lines) if l == "[pz]")
     assert idx_a_pub < idx_z_pub
     # Private blocks must also be present and in order
-    idx_a_priv = next(i for i, l in enumerate(lines) if l == "[.APackage]")
-    idx_z_priv = next(i for i, l in enumerate(lines) if l == "[.ZPackage]")
+    idx_a_priv = next(i for i, l in enumerate(lines) if l == "[.pa]")
+    idx_z_priv = next(i for i, l in enumerate(lines) if l == "[.pz]")
     assert idx_a_priv < idx_z_priv
     # Blank line before each module section
     assert lines[idx_a_pub - 1] == ""
@@ -672,10 +672,10 @@ def test_build_rsyncd_conf_two_packages_sorted() -> None:
 def test_private_modules_disabled_omits_private() -> None:
     config = golden_config()
     config["private_modules"]["enabled"] = False
-    pkg = make_pkg("p1", "ArchLinux", dst="/mirror/ftp/ArchLinux")
+    pkg = make_pkg("archlinux", "ArchLinux", dst="/mirror/ftp/ArchLinux")
     result = build_rsyncd_conf([pkg], config)
-    assert "[.ArchLinux]" not in result
-    assert "[ArchLinux]" in result
+    assert "[.archlinux]" not in result
+    assert "[archlinux]" in result
 
 
 def test_private_modules_custom_auth_users_and_lock_file() -> None:
@@ -773,7 +773,7 @@ def test_regenerate_rsync_files_writes_both(tmp_path: Path) -> None:
     assert conf_path.exists()
     assert stat.S_IMODE(os.stat(secrets_path).st_mode) == 0o600
     assert stat.S_IMODE(os.stat(conf_path).st_mode) == 0o644
-    assert "[ArchLinux]" in conf_path.read_text(encoding="utf-8")
+    assert "[archlinux]" in conf_path.read_text(encoding="utf-8")
     assert "kaist-mirror:examplepassword" in secrets_path.read_text(encoding="utf-8")
 
 

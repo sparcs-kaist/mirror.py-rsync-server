@@ -352,11 +352,11 @@ def select_visible_packages(packages: Iterable) -> list:
     Applies the following rules in order:
     - Packages where getattr(pkg.settings, 'hidden', False) is truthy are
       silently skipped (hidden is intentional, no warning).
-    - Packages with an invalid module name (validate_module_name returns
-      False) are skipped with a log.warning.
+    - Packages whose pkgid is an invalid module name (validate_module_name
+      returns False) are skipped with a log.warning.
     - Packages with an empty, non-absolute, or control-char dst are skipped
       with a log.warning.
-    - Among remaining packages, case-insensitive duplicate names are
+    - Among remaining packages, case-insensitive duplicate pkgids are
       resolved by keeping the first occurrence in sorted order and skipping
       later duplicates with a log.warning naming both pkgids.
 
@@ -366,22 +366,21 @@ def select_visible_packages(packages: Iterable) -> list:
             src (str), and dst (str).
 
     Return:
-        visible(list): Packages that passed all checks, sorted by name
+        visible(list): Packages that passed all checks, sorted by pkgid
             (case-sensitive).
     """
     # Sort first to make dedup deterministic (first in sorted order wins).
-    sorted_pkgs = sorted(packages, key=lambda p: p.name)
+    sorted_pkgs = sorted(packages, key=lambda p: p.pkgid)
 
     candidates = []
     for pkg in sorted_pkgs:
         if getattr(pkg.settings, "hidden", False):
             continue
 
-        if not validate_module_name(pkg.name):
+        if not validate_module_name(pkg.pkgid):
             log.warning(
-                "Package %r has invalid module name %r; skipping",
+                "Package %r has invalid module name; skipping",
                 pkg.pkgid,
-                pkg.name,
             )
             continue
 
@@ -408,11 +407,11 @@ def select_visible_packages(packages: Iterable) -> list:
 
         candidates.append(pkg)
 
-    # Deduplicate by case-insensitive name; first occurrence (already sorted) wins.
+    # Deduplicate by case-insensitive pkgid; first occurrence (already sorted) wins.
     seen: dict[str, str] = {}
     visible = []
     for pkg in candidates:
-        lower_name = pkg.name.lower()
+        lower_name = pkg.pkgid.lower()
         if lower_name in seen:
             log.warning(
                 "Package %r has duplicate module name (case-insensitive) with %r; skipping",
@@ -453,18 +452,18 @@ def build_public_module(pkg: Any) -> str:
     """Build the public module block for a package.
 
     The block has no surrounding blank lines. Format:
-        [<pkg.name>]
+        [<pkg.pkgid>]
             path = <pkg.settings.dst>
             comment = from <sanitized pkg.settings.src>   (omitted if src is empty)
 
     Args:
-        pkg: Package object with name (str) and settings.dst (str) and
+        pkg: Package object with pkgid (str) and settings.dst (str) and
             settings.src (str).
 
     Return:
         block(str): The module block text with no trailing newline.
     """
-    lines = [f"[{pkg.name}]"]
+    lines = [f"[{pkg.pkgid}]"]
     lines.append(f"    {format_param('path', pkg.settings.dst)}")
     src = getattr(pkg.settings, "src", "")
     if src:
@@ -477,7 +476,7 @@ def build_private_module(pkg: Any, private_modules: dict) -> str:
     """Build the private module block for a package.
 
     The block has no surrounding blank lines. Format:
-        [.<pkg.name>]
+        [.<pkg.pkgid>]
             path = <pkg.settings.dst>
             comment = private module for <pkg.name> without connection limits for authorized mirrors
             auth users = <auth_users>
@@ -485,7 +484,7 @@ def build_private_module(pkg: Any, private_modules: dict) -> str:
             lock file = <lock_file>
 
     Args:
-        pkg: Package object with name (str) and settings.dst (str).
+        pkg: Package object with pkgid (str), name (str) and settings.dst (str).
         private_modules(dict): Private module config with keys auth_users
             (str), list (bool), and lock_file (str).
 
@@ -494,7 +493,7 @@ def build_private_module(pkg: Any, private_modules: dict) -> str:
     """
     comment = PRIVATE_COMMENT_TEMPLATE.format(name=pkg.name)
     lines = [
-        f"[.{pkg.name}]",
+        f"[.{pkg.pkgid}]",
         f"    {format_param('path', pkg.settings.dst)}",
         f"    {format_param('comment', comment)}",
         f"    {format_param('auth users', private_modules['auth_users'])}",

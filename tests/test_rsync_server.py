@@ -948,3 +948,89 @@ def test_plugin_returns_event_record() -> None:
     assert record.type == "event"
     assert record.name == "rsync-server"
     assert record.setup is setup
+
+
+# --- mirror.py 1.3.0 compatibility: api gate + config create ---
+
+from pathlib import Path
+
+import mirror_plugin_rsync_server as mprs
+from mirror_plugin_rsync_server import (
+    EXAMPLE_RSYNC_CONFIG,
+    create_config,
+    _resolve_config_target,
+)
+
+
+def test_plugin_declares_api_version() -> None:
+    assert plugin().api_version == (1, 0)
+
+
+def test_plugin_declares_config_filename() -> None:
+    record = plugin()
+    assert record.config_filename == "rsync.json"
+    assert record.create_config is create_config
+
+
+def test_resolve_config_target_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delattr(mirror.config, "CONFIG_PATH", raising=False)
+    monkeypatch.setattr(mprs, "DEFAULT_CONFIG_DIR", "/etc/mirror")
+    assert _resolve_config_target() == Path("/etc/mirror/rsync.json")
+
+    monkeypatch.setattr(mirror.config, "CONFIG_PATH", tmp_path / "config.json", raising=False)
+    assert _resolve_config_target() == tmp_path / "rsync.json"
+
+
+def test_create_config_fresh_writes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(mirror.config, "CONFIG_PATH", tmp_path / "config.json", raising=False)
+    result = create_config(force=False)
+    target = tmp_path / "rsync.json"
+    assert result.created is True
+    assert result.path == str(target)
+    assert target.exists()
+    assert stat.S_IMODE(os.stat(target).st_mode) == 0o600
+    assert json.loads(target.read_text(encoding="utf-8")) == EXAMPLE_RSYNC_CONFIG
+
+
+def test_create_config_existing_no_force(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(mirror.config, "CONFIG_PATH", tmp_path / "config.json", raising=False)
+    target = tmp_path / "rsync.json"
+    target.write_text("SENTINEL", encoding="utf-8")
+    result = create_config(force=False)
+    assert result.created is False
+    assert target.read_text(encoding="utf-8") == "SENTINEL"
+
+
+def test_create_config_force_overwrites(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(mirror.config, "CONFIG_PATH", tmp_path / "config.json", raising=False)
+    target = tmp_path / "rsync.json"
+    target.write_text("SENTINEL", encoding="utf-8")
+    result = create_config(force=True)
+    assert result.created is True
+    assert json.loads(target.read_text(encoding="utf-8")) == EXAMPLE_RSYNC_CONFIG
+
+
+def test_create_config_cli_uses_fallback_when_config_path_unset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delattr(mirror.config, "CONFIG_PATH", raising=False)
+    monkeypatch.setattr(mprs, "DEFAULT_CONFIG_DIR", str(tmp_path))
+    result = create_config(force=False)
+    target = tmp_path / "rsync.json"
+    assert result.created is True
+    assert result.path == str(target)
+    assert target.exists()
+    assert stat.S_IMODE(os.stat(target).st_mode) == 0o600
+
+
+def test_example_file_matches_embedded_template() -> None:
+    example = Path(__file__).resolve().parent.parent / "rsync.json.example"
+    assert json.loads(example.read_text(encoding="utf-8")) == EXAMPLE_RSYNC_CONFIG

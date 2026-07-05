@@ -33,20 +33,42 @@ the public nor the private module list.
 
 ## Installation
 
+Requires **mirror.py >= 1.3.0** (uses the 1.3.0 plugin API: API version gate and the
+per-plugin config-file mechanism).
+
 Install the plugin into the same Python environment as mirror.py:
 
 ```
 pip install -e .
 ```
 
-Enable the plugin in mirror.py's `config.json`:
+Enable the plugin in mirror.py's `config.json`. As of mirror.py 1.3.0 the `plugins`
+block is enable-only:
 
 ```json
 "plugins": { "rsync-server": { "enabled": true } }
 ```
 
-The plugin's own settings live in `rsync.json`, **not** in the `plugins` block of
-`config.json`. See the Configuration section below.
+Any `config` sub-block here is ignored — the plugin's own settings live in `rsync.json`
+(see the Configuration section below).
+
+### Scaffold rsync.json
+
+The plugin supports `mirror plugin config create`:
+
+```
+mirror plugin config create rsync-server
+```
+
+This writes an example `rsync.json` (mode `0600`, since it holds plaintext passwords).
+
+Caveat: during `mirror plugin config create` the mirror config path is not loaded, so the
+file is written to the fixed fallback location **`/etc/mirror/rsync.json`** regardless of
+any `--config` flag. `--config` only points the command at a valid `config.json` so the
+plugin registry can load; it does not change where the scaffold is written. If your
+mirror config lives elsewhere, move the generated file next to your `config.json`, or copy
+[`rsync.json.example`](rsync.json.example) manually. (At daemon runtime the config path
+*is* known, so generation and reads use `rsync.json` next to your `config.json`.)
 
 
 ## Configuration

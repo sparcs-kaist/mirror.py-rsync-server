@@ -35,6 +35,36 @@ DEFAULT_RSYNCD_CONF = "/etc/rsyncd.conf"
 DEFAULT_SECRETS_FILE = "/etc/rsyncd.secrets"
 MODULE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 
+DEFAULT_CONFIG_DIR = "/etc/mirror"
+
+# Single source of truth for rsync.json.example and the `mirror plugin config
+# create` scaffold. rsync.json.example must stay byte-equivalent to this.
+EXAMPLE_RSYNC_CONFIG: dict[str, Any] = {
+    "rsyncd_conf": "/etc/rsyncd.conf",
+    "secrets_file": "/mirror/etc/rsyncd.secrets",
+    "users": {
+        "kaist-mirror": "examplepassword",
+    },
+    "global": {
+        "uid": "rsync",
+        "gid": "nogroup",
+        "use chroot": "no",
+        "max connections": 20,
+        "motd file": "/mirror/etc/motd",
+        "log file": "/var/log/geoul/rsyncd/all.log",
+        "transfer logging": "yes",
+        "log format": "%o %a - %u [%t] \"%P/%f\" - %l",
+        "pid file": "/var/run/rsyncd.pid",
+        "exclude": ".~tmp~",
+    },
+    "private_modules": {
+        "enabled": True,
+        "auth_users": "*",
+        "list": False,
+        "lock_file": "/var/run/rsyncd-private.lock",
+    },
+}
+
 log = logging.getLogger("mirror")
 _generate_lock = threading.Lock()
 
@@ -673,13 +703,61 @@ def handle_regenerate_event(*args: object, **kwargs: object) -> None:
             )
 
 
+def _resolve_config_target() -> Path:
+    """Resolve where rsync.json should live, tolerating an unset CONFIG_PATH.
+
+    At daemon runtime mirror.config.CONFIG_PATH is set, so rsync.json lives next
+    to the main config.json. During `mirror plugin config create` the core does
+    not run mirror.config.load(), so CONFIG_PATH is unset and this falls back to
+    DEFAULT_CONFIG_DIR.
+
+    Return:
+        target(Path): Absolute path to rsync.json (CONFIG_PATH.parent when set,
+            otherwise DEFAULT_CONFIG_DIR).
+    """
+    base = getattr(mirror.config, "CONFIG_PATH", None)
+    if base is not None:
+        return Path(base).parent / RSYNC_CONFIG_FILENAME
+    return Path(DEFAULT_CONFIG_DIR) / RSYNC_CONFIG_FILENAME
+
+
+def create_config(force: bool) -> "mirror.plugin.ConfigCreateResult":
+    """Scaffold an example rsync.json for `mirror plugin config create`.
+
+    Writes EXAMPLE_RSYNC_CONFIG to the resolved target with mode 0600 (the file
+    holds plaintext rsync passwords). The plugin owns the write and the overwrite
+    decision; the core neither writes nor sets permissions.
+
+    Args:
+        force(bool): When False and the target already exists, nothing is written.
+            When True, an existing file is overwritten.
+
+    Return:
+        result(mirror.plugin.ConfigCreateResult): Target path and whether a write
+            occurred (created is False when the file existed and force was False).
+    """
+    from mirror.plugin import ConfigCreateResult
+
+    target = _resolve_config_target()
+    if target.exists() and not force:
+        return ConfigCreateResult(path=str(target), created=False)
+
+    content = json.dumps(EXAMPLE_RSYNC_CONFIG, indent=4) + "\n"
+    write_file_atomic(target, content, 0o600)
+    return ConfigCreateResult(path=str(target), created=True)
+
+
 def setup() -> None:
     """Register handle_regenerate_event for daemon start and config reload events.
 
-    Registers the listener for both MASTER.INIT.POST (daemon start) and
-    MASTER.CONFIG_RELOAD.POST (config reload). This function performs no I/O;
-    it only wires up listeners so it is safe to call in every process
-    (including short-lived CLI runs).
+    Registers the listener for MASTER.INIT.POST (daemon start) and
+    MASTER.CONFIG_RELOAD.POST (config reload). This function performs no I/O; it
+    only wires up listeners so it is safe to call in every process (including
+    short-lived CLI runs).
+
+    Note: mirror.py 1.3.0 does not yet fire MASTER.CONFIG_RELOAD.POST, so the
+    reload listener is inert until a core release adds that event; regeneration
+    happens on daemon start/restart in the meantime.
 
     Args:
         (none)
@@ -695,14 +773,23 @@ def plugin() -> "mirror.plugin.PluginRecord":
     """Return the mirror.py event plugin record for the rsync-server plugin.
 
     Uses a lazy import of mirror.plugin.event_plugin to match the pattern
-    established by the mirror-plugin-echo example.
+    established by the mirror-plugin-echo example. Declares api_version=(1, 0) to
+    pass the mirror.py 1.3.0 plugin API gate, and registers rsync.json as the
+    per-plugin config file plus a create_config scaffold.
 
     Args:
         (none)
 
     Return:
         record(mirror.plugin.PluginRecord): Plugin record with name 'rsync-server',
-            type 'event', and setup pointing to the setup function.
+            type 'event', setup pointing to setup, api_version (1, 0),
+            config_filename 'rsync.json', and create_config scaffold.
     """
     from mirror.plugin import event_plugin
-    return event_plugin(name=NAME, setup=setup)
+    return event_plugin(
+        name=NAME,
+        setup=setup,
+        api_version=(1, 0),
+        config_filename=RSYNC_CONFIG_FILENAME,
+        create_config=create_config,
+    )

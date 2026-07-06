@@ -1,6 +1,6 @@
 [project]
 name = "mirror.py-rsync-server"
-version = "1.0.3"
+version = "1.1.0"
 description = "mirror.py event plug-in that generates rsyncd.conf and rsyncd.secrets from the package list."
 readme = "README.md"
 requires-python = ">=3.10"
